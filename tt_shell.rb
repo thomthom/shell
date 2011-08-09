@@ -27,7 +27,7 @@ module TT::Plugins::Shell
   
   # Preference
   @settings = TT::Settings.new( ID )
-  @settings[:thickness, 500.mm]
+  @settings.set_default( :thickness, 500.mm )
   
   def self.settings; @settings; end
   
