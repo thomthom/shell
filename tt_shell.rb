@@ -19,7 +19,7 @@ module TT::Plugins::Shell
   
   # Plugin information
   ID          = 'TT_Shell'.freeze
-  VERSION     = '0.1.0'.freeze # Alpha
+  VERSION     = '0.2.0'.freeze # Alpha
   PLUGIN_NAME = 'Shell'.freeze
   
   
@@ -29,13 +29,15 @@ module TT::Plugins::Shell
   @settings = TT::Settings.new( ID )
   @settings[:thickness, 500.mm]
   
+  def self.settings; @settings; end
+  
   
   ### MENU & TOOLBARS ### ------------------------------------------------------
   
   unless file_loaded?( __FILE__ )
     # Menus
-    m = TT.menu( 'Plugin' )
-    m.add_item( 'Shell' ) { self.shell_selection }
+    m = TT.menu( 'Tools' )
+    m.add_item( 'Shell' ) { self.activate_shell_tool }
     
     # Context menu
     #UI.add_context_menu_handler { |context_menu|
@@ -56,6 +58,8 @@ module TT::Plugins::Shell
   
   ### MAIN SCRIPT ### ----------------------------------------------------------
   
+  # @deprecated Version 0.1 method.
+  # @since 0.1.0
   def self.shell_selection
     # Prompt user for input.
     prompts = [ 'Thickness: ' ]
@@ -80,9 +84,261 @@ module TT::Plugins::Shell
   end
   
   
+  # @since 0.2.0
+  def self.activate_shell_tool
+    Sketchup.active_model.select_tool( ShellTool.new )
+  end
+  
+  
+  # @since 0.2.0
+  class ShellTool
+    
+    # @since 0.2.0
+    PARENT = TT::Plugins::Shell # Shorthand alias
+    
+    # @since 0.2.0
+    COLOR_FILL = Sketchup::Color.new( 255, 255, 255, 200 )
+    COLOR_EDGE = Sketchup::Color.new(   0,   0,   0, 200 )
+    
+    # @since 0.2.0
+    def initialize
+      # Gather faces and vertices.
+      @meshes = []
+      model = Sketchup.active_model
+      for instance in model.selection
+        next unless TT::Instance.is?( instance )
+        definition = TT::Instance.definition( instance )
+        faces = []
+        vertices = []
+        for entity in definition.entities
+          next unless entity.is_a?( Sketchup::Face )
+          faces << entity
+          vertices << entity.outer_loop.vertices
+        end
+        vertices.flatten!
+        vertices.uniq!
+        @meshes << [ definition.entities, faces, vertices, instance.transformation ]
+      end
+      # Cached data used by draw()
+      @offsets = {} # Key: Vertex - Value: Point3d
+      @polygons = []
+      # Settings
+      @thickness = PARENT.settings[:thickness]
+      @cached_thickness = @thickness
+      # User Input
+      @ip_mouse = Sketchup::InputPoint.new
+      @ip_start = Sketchup::InputPoint.new
+    end
+    
+    # @since 0.2.0
+    def enableVCB?
+      return true
+    end
+    
+    # @since 0.2.0
+    def activate
+      cache_preview()
+      Sketchup.active_model.active_view.invalidate
+      update_ui()
+    end
+    
+    # @since 0.2.0
+    def deactivate( view )
+      view.invalidate
+    end
+    
+    # @since 0.2.0
+    def resume( view )
+      view.invalidate
+      update_ui()
+    end
+    
+    # @since 0.2.0
+    def onUserText( text, view )
+      thickness = text.to_l
+      @thickness = thickness
+      @cached_thickness = @thickness
+      PARENT.settings[:thickness] = @thickness
+      cache_preview()
+      view.invalidate
+    ensure
+      update_ui()
+      @ip_start.clear
+    end
+    
+    # Pressing enter when the thickness has not changed will commit the offset.
+    # 
+    # @since 0.2.0
+    def onReturn(view)
+      offset_mesh()
+      view.model.select_tool( nil )
+    end
+    
+    # @since 0.2.0
+    def onCancel( reason, view )
+      @ip_start.clear
+      @thickness = @cached_thickness
+      update_ui()
+      cache_preview()
+      view.invalidate
+    end
+    
+    # @since 0.2.0
+    def onLButtonDoubleClick( flags, x, y, view )
+      offset_mesh()
+      view.model.select_tool( nil )
+    end
+    
+    # @since 0.2.0
+    def onLButtonDown( flags, x, y, view )
+      if @ip_start.valid?
+        # Second point picked.
+        update_input()
+        @cached_thickness = @thickness
+        @ip_start.clear
+      else
+        # First point picked.
+        @ip_start.copy!( @ip_mouse )
+      end
+      view.invalidate
+    end
+    
+    # @since 0.2.0
+    def onMouseMove( flags, x, y, view )
+      @ip_mouse.pick( view, x, y )
+      view.tooltip = @ip_mouse.tooltip
+      if @ip_start.valid?
+        update_ui()
+        update_input()
+      end
+      view.invalidate
+    end
+    
+    # @since 0.2.0
+    def draw( view )
+      # Geometry Preview
+      unless @thickness == 0.to_l || @polygons.empty?
+        view.line_stipple = ''
+        view.line_width = 1
+        
+        for polygon in @polygons
+          view.drawing_color = COLOR_EDGE
+          view.draw( GL_LINE_LOOP, polygon )
+          
+          view.drawing_color = COLOR_FILL
+          view.draw( GL_POLYGON, polygon )
+        end
+      end
+      # User Input
+      @ip_mouse.draw( view) if @ip_mouse.display?
+      if @ip_start.valid?
+        @ip_start.draw( view ) if @ip_start.display?
+        view.line_stipple = '-'
+        view.line_width = 1
+        view.set_color_from_line( @ip_start.position, @ip_mouse.position )
+        view.draw_line( @ip_start.position, @ip_mouse.position )
+      end
+    end
+    
+    private
+    
+    # @return [Nil]
+    # @since 0.2.0
+    def reset
+      @ip_start.clear
+      nil
+    end
+    
+    # @return [Nil]
+    # @since 0.2.0
+    def update_ui
+      Sketchup.status_text = 'Enter a thickness and double click to complete.'
+      Sketchup.vcb_label = 'Thickness'
+      Sketchup.vcb_value = @thickness
+      nil
+    end
+    
+    # @return [Nil]
+    # @since 0.2.0
+    def update_input
+      @thickness = @ip_start.position.distance( @ip_mouse.position )
+      update_ui()
+      cache_preview()
+      nil
+    end
+    
+    # @return [Boolean]
+    # @since 0.2.0
+    def cache_preview
+      return false if @thickness == 0.to_l
+      @polygons = offset_polygons()
+      true
+    end
+    
+    # Offset vertex into world co-ordinates.
+    #
+    # @param [Length] thickness
+    # @param [Array<Sketchup::Vertex>] vertices
+    # @param [Geom::Transformation] transformation
+    #
+    # @return [Hash]
+    # @since 0.2.0
+    def offset_vertices( thickness, vertices, transformation )
+      offsets = {}
+      for vertex in vertices
+        pt = PARENT.offset_vertex( vertex, thickness )
+        offsets[ vertex ] = pt.transform!( transformation )
+      end
+      offsets
+    end
+    
+    # Generates an array of offset polygons.
+    #
+    # @return [Array<Array<Geom::Point3d>>]
+    # @since 0.2.0
+    def offset_polygons
+      thickness = @thickness
+      polygons = []
+      for mesh in @meshes
+        entities, faces, vertices, transformation = mesh
+        cached_vertices = offset_vertices( thickness, vertices, transformation )
+        for face in faces
+          polygons << face.vertices.map { |vertex| cached_vertices[vertex] }
+        end
+      end
+      polygons
+    end
+    
+    # @return [Boolean]
+    # @since 0.2.0
+    def offset_mesh
+      return false if @thickness == 0.to_l
+      model = Sketchup.active_model
+      time_start = Time.now
+      TT::Model.start_operation( "Shell #{@thickness}" )
+      for mesh in @meshes
+        entities, faces, vertices, transformation = mesh
+        PARENT.shell( entities, @thickness )
+      end
+      model.commit_operation
+      puts "Shell took #{Time.now-time_start}s"
+      true
+    rescue
+      model.abort_operation
+      raise
+    end
+    
+  end # class ShellTool
+  
+  
+  # @todo Option to add shell directly to the entities instead of a separate
+  #   group. Maybe just call explode afterwards? (Explode might be slow. Check
+  #   if it will be slower than adding the entities directly.)
+  #
   # @param [Sketchup::Entities] entities
   #
   # @return [Sketchup::Group]
+  # @since 0.1.0
   def self.shell( entities, thickness )
     # Gather faces and vertices.
     faces = []
@@ -133,6 +389,7 @@ module TT::Plugins::Shell
   # @param [Array<Geom::Point3d>] points
   #
   # @return [Nil]
+  # @since 0.1.0
   def self.add_border_face( entities, points )
     edges = []
     if TT::Geom3d.planar_points?( points )
@@ -158,6 +415,7 @@ module TT::Plugins::Shell
   # @param [Length] distance
   #
   # @return [Geom::Point3d,Nil] Nil upon failure.
+  # @since 0.1.0
   def self.offset_vertex( vertex, distance )
     faces = vertex.faces
     # Can't offset vertex without any connected face.
@@ -219,6 +477,7 @@ module TT::Plugins::Shell
   # @param [Sketchup::Face] face2
   #
   # @return [Sketchup::Edge] Edge dividing the faces.
+  # @since 0.1.0
   def self.smooth_border_segment( face1, face2 )
     divider = ( face1.edges & face2.edges)[0]
     divider.soft = true
@@ -231,6 +490,7 @@ module TT::Plugins::Shell
   # @param [Sketchup::Face] destination
   #
   # @return [Nil]
+  # @since 0.1.0
   def self.copy_soft_smooth( source, destination )
     loop1 = source.outer_loop.vertices
     loop2 = destination.outer_loop.vertices.reverse!
@@ -263,7 +523,7 @@ module TT::Plugins::Shell
   # @param [Boolean] tt_lib
   #
   # @return [Integer]
-  # @since 1.0.0
+  # @since 0.1.0
   def self.reload( tt_lib = false )
     original_verbose = $VERBOSE
     $VERBOSE = nil
