@@ -353,8 +353,11 @@ module TT::Plugins::Shell
     # Offset vertices - generate a hash that links the source vertices with the
     # offset vertices.
     offsets = {}
+    offsets_pt = {}
     for vertex in vertices
-      offsets[ vertex ] = self.offset_vertex( vertex, thickness )
+      point = self.offset_vertex( vertex, thickness )
+      offsets[ vertex ] = point
+      offsets_pt[ vertex.position.to_a ] = point
     end
     # Build the shell geometry.
     shell = entities.add_group
@@ -367,7 +370,22 @@ module TT::Plugins::Shell
         offsets[ vertex ]
       }
       # (!) Error catch
-      offset_face = shell_entities.add_face( points )
+      #     Error: #<ArgumentError: Points are not planar>
+      begin
+        offset_face = shell_entities.add_face( points )
+      rescue ArgumentError => e
+        # (!) Recreate with triangulated PolygonMesh.
+        
+        mesh = face.mesh
+        for i in ( 1..mesh.count_points )
+          pt = offsets_pt[ mesh.point_at(i).to_a ]
+          mesh.set_point( i, pt )
+        end
+        shell_entities.add_faces_from_mesh( mesh, 0, face.material, face.back_material )
+        
+        puts e.message
+        next
+      end
       # Transfer edge properties from the source face to the destination face.
       self.copy_soft_smooth( face, offset_face ) # + 0.03s
       # Add border faces. A border edge only has one edge connected.
