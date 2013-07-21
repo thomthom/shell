@@ -6,58 +6,53 @@
 #-------------------------------------------------------------------------------
 
 require 'sketchup.rb'
-require 'TT_Lib2/core.rb'
+begin
+  require 'TT_Lib2/core.rb'
+rescue LoadError => e
+  module TT
+    if @lib2_update.nil?
+      url = 'http://www.thomthom.net/software/sketchup/tt_lib2/errors/not-installed'
+      options = {
+        :dialog_title => 'TT_Lib² Not Installed',
+        :scrollable => false, :resizable => false, :left => 200, :top => 200
+      }
+      w = UI::WebDialog.new( options )
+      w.set_size( 500, 300 )
+      w.set_url( "#{url}?plugin=#{File.basename( __FILE__ )}" )
+      w.show
+      @lib2_update = w
+    end
+  end
+end
 
-TT::Lib.compatible?('2.5.4', 'TT Shell')
 
 #-------------------------------------------------------------------------------
 
+if defined?( TT::Lib ) && TT::Lib.compatible?( '2.7.0', 'Shell' )
 
 module TT::Plugins::Shell
-  
-  ### CONSTANTS ### ------------------------------------------------------------
-  
-  # Plugin information
-  ID          = 'TT_Shell'.freeze
-  VERSION     = '0.2.0'.freeze # Alpha
-  PLUGIN_NAME = 'Shell'.freeze
-  
-  
+
+
   ### MODULE VARIABLES ### -----------------------------------------------------
-  
+
   # Preference
-  @settings = TT::Settings.new( ID )
+  @settings = TT::Settings.new( PLUGIN_ID )
   @settings.set_default( :thickness, 500.mm )
-  
+
   def self.settings; @settings; end
-  
-  
+
+
   ### MENU & TOOLBARS ### ------------------------------------------------------
-  
+
   unless file_loaded?( __FILE__ )
     # Menus
     m = TT.menu( 'Tools' )
     m.add_item( 'Shell' ) { self.activate_shell_tool }
-    
-    # Context menu
-    #UI.add_context_menu_handler { |context_menu|
-    #  model = Sketchup.active_model
-    #  selection = model.selection
-    #  # ...
-    #}
-    
-    # Toolbar
-    #toolbar = UI::Toolbar.new( PLUGIN_NAME )
-    #toolbar.add_item( ... )
-    #if toolbar.get_last_state == TB_VISIBLE
-    #  toolbar.restore
-    #  UI.start_timer( 0.1, false ) { toolbar.restore } # SU bug 2902434
-    #end
-  end 
-  
-  
+  end
+
+
   ### MAIN SCRIPT ### ----------------------------------------------------------
-  
+
   # @deprecated Version 0.1 method.
   # @since 0.1.0
   def self.shell_selection
@@ -82,24 +77,24 @@ module TT::Plugins::Shell
     model.commit_operation
     puts "Shell took #{Time.now-time_start}s"
   end
-  
-  
+
+
   # @since 0.2.0
   def self.activate_shell_tool
     Sketchup.active_model.select_tool( ShellTool.new )
   end
-  
-  
+
+
   # @since 0.2.0
   class ShellTool
-    
+
     # @since 0.2.0
     PARENT = TT::Plugins::Shell # Shorthand alias
-    
+
     # @since 0.2.0
     COLOR_FILL = Sketchup::Color.new( 255, 255, 255, 200 )
     COLOR_EDGE = Sketchup::Color.new(   0,   0,   0, 200 )
-    
+
     # @since 0.2.0
     def initialize
       # Gather faces and vertices.
@@ -129,30 +124,30 @@ module TT::Plugins::Shell
       @ip_mouse = Sketchup::InputPoint.new
       @ip_start = Sketchup::InputPoint.new
     end
-    
+
     # @since 0.2.0
     def enableVCB?
       return true
     end
-    
+
     # @since 0.2.0
     def activate
       cache_preview()
       Sketchup.active_model.active_view.invalidate
       update_ui()
     end
-    
+
     # @since 0.2.0
     def deactivate( view )
       view.invalidate
     end
-    
+
     # @since 0.2.0
     def resume( view )
       view.invalidate
       update_ui()
     end
-    
+
     # @since 0.2.0
     def onUserText( text, view )
       thickness = text.to_l
@@ -165,15 +160,15 @@ module TT::Plugins::Shell
       update_ui()
       @ip_start.clear
     end
-    
+
     # Pressing enter when the thickness has not changed will commit the offset.
-    # 
+    #
     # @since 0.2.0
     def onReturn(view)
       offset_mesh()
       view.model.select_tool( nil )
     end
-    
+
     # @since 0.2.0
     def onCancel( reason, view )
       @ip_start.clear
@@ -182,13 +177,13 @@ module TT::Plugins::Shell
       cache_preview()
       view.invalidate
     end
-    
+
     # @since 0.2.0
     def onLButtonDoubleClick( flags, x, y, view )
       offset_mesh()
       view.model.select_tool( nil )
     end
-    
+
     # @since 0.2.0
     def onLButtonDown( flags, x, y, view )
       if @ip_start.valid?
@@ -202,7 +197,7 @@ module TT::Plugins::Shell
       end
       view.invalidate
     end
-    
+
     # @since 0.2.0
     def onMouseMove( flags, x, y, view )
       @ip_mouse.pick( view, x, y )
@@ -213,18 +208,18 @@ module TT::Plugins::Shell
       end
       view.invalidate
     end
-    
+
     # @since 0.2.0
     def draw( view )
       # Geometry Preview
       unless @thickness == 0.to_l || @polygons.empty?
         view.line_stipple = ''
         view.line_width = 1
-        
+
         for polygon in @polygons
           view.drawing_color = COLOR_EDGE
           view.draw( GL_LINE_LOOP, polygon )
-          
+
           view.drawing_color = COLOR_FILL
           view.draw( GL_POLYGON, polygon )
         end
@@ -239,16 +234,16 @@ module TT::Plugins::Shell
         view.draw_line( @ip_start.position, @ip_mouse.position )
       end
     end
-    
+
     private
-    
+
     # @return [Nil]
     # @since 0.2.0
     def reset
       @ip_start.clear
       nil
     end
-    
+
     # @return [Nil]
     # @since 0.2.0
     def update_ui
@@ -257,7 +252,7 @@ module TT::Plugins::Shell
       Sketchup.vcb_value = @thickness
       nil
     end
-    
+
     # @return [Nil]
     # @since 0.2.0
     def update_input
@@ -266,7 +261,7 @@ module TT::Plugins::Shell
       cache_preview()
       nil
     end
-    
+
     # @return [Boolean]
     # @since 0.2.0
     def cache_preview
@@ -274,7 +269,7 @@ module TT::Plugins::Shell
       @polygons = offset_polygons()
       true
     end
-    
+
     # Offset vertex into world co-ordinates.
     #
     # @param [Length] thickness
@@ -291,7 +286,7 @@ module TT::Plugins::Shell
       end
       offsets
     end
-    
+
     # Generates an array of offset polygons.
     #
     # @return [Array<Array<Geom::Point3d>>]
@@ -308,7 +303,7 @@ module TT::Plugins::Shell
       end
       polygons
     end
-    
+
     # @return [Boolean]
     # @since 0.2.0
     def offset_mesh
@@ -327,10 +322,10 @@ module TT::Plugins::Shell
       model.abort_operation
       raise
     end
-    
+
   end # class ShellTool
-  
-  
+
+
   # @todo Option to add shell directly to the entities instead of a separate
   #   group. Maybe just call explode afterwards? (Explode might be slow. Check
   #   if it will be slower than adding the entities directly.)
@@ -375,14 +370,14 @@ module TT::Plugins::Shell
         offset_face = shell_entities.add_face( points )
       rescue ArgumentError => e
         # (!) Recreate with triangulated PolygonMesh.
-        
+
         mesh = face.mesh
         for i in ( 1..mesh.count_points )
           pt = offsets_pt[ mesh.point_at(i).to_a ]
           mesh.set_point( i, pt )
         end
         shell_entities.add_faces_from_mesh( mesh, 0, face.material, face.back_material )
-        
+
         puts e.message
         next
       end
@@ -401,8 +396,8 @@ module TT::Plugins::Shell
     end
     shell
   end
-  
-  
+
+
   # @param [Sketchup::Entities] entities
   # @param [Array<Geom::Point3d>] points
   #
@@ -427,8 +422,8 @@ module TT::Plugins::Shell
     end
     nil
   end
-  
-  
+
+
   # @param [Sketchup::Vertex] vertex
   # @param [Length] distance
   #
@@ -489,8 +484,8 @@ module TT::Plugins::Shell
     # The remaining planes where coplanar, treat it as there are only two faces.
     return position.project_to_line( line )
   end
-  
-  
+
+
   # @param [Sketchup::Face] face1
   # @param [Sketchup::Face] face2
   #
@@ -502,8 +497,8 @@ module TT::Plugins::Shell
     divider.smooth = true
     divider
   end
-  
-  
+
+
   # @param [Sketchup::Face] source
   # @param [Sketchup::Face] destination
   #
@@ -529,19 +524,19 @@ module TT::Plugins::Shell
     end
     nil
   end
-  
-  
+
+
   ### DEBUG ### ----------------------------------------------------------------
-  
+
   # @note Debug method to reload the plugin.
   #
   # @example
-  #   TT::Plugins::Shell.reload
+  #   TT::Plugins::Template.reload
   #
-  # @param [Boolean] tt_lib
+  # @param [Boolean] tt_lib Reloads TT_Lib2 if +true+.
   #
-  # @return [Integer]
-  # @since 0.1.0
+  # @return [Integer] Number of files reloaded.
+  # @since 1.0.0
   def self.reload( tt_lib = false )
     original_verbose = $VERBOSE
     $VERBOSE = nil
@@ -549,13 +544,21 @@ module TT::Plugins::Shell
     # Core file (this)
     load __FILE__
     # Supporting files
-    1
+    if defined?( PATH ) && File.exist?( PATH )
+      x = Dir.glob( File.join(PATH, '*.{rb,rbs}') ).each { |file|
+        load file
+      }
+      x.length + 1
+    else
+      1
+    end
   ensure
     $VERBOSE = original_verbose
   end
-  
-  
+
 end # module
+
+end # if TT_Lib
 
 #-------------------------------------------------------------------------------
 
