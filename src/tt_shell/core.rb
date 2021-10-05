@@ -334,7 +334,7 @@ module TT::Plugins::Shell
   #
   # @return [Sketchup::Group]
   # @since 0.1.0
-  def self.shell( entities, thickness )
+  def self.shell( entities, thickness, use_builder: true )
     # Gather faces and vertices.
     faces = []
     vertices = []
@@ -357,6 +357,17 @@ module TT::Plugins::Shell
     # Build the shell geometry.
     shell = entities.add_group
     shell_entities = shell.entities
+    if use_builder && shell_entities.respond_to?(:build)
+      shell_entities.build { |builder|
+        self.offset_faces(builder, shell_entities, faces, offsets, offsets_pt)
+      }
+    else
+      self.offset_faces(shell_entities, shell_entities, faces, offsets, offsets_pt)
+    end
+    shell
+  end
+
+  def self.offset_faces(builder, shell_entities, faces, offsets, offsets_pt)
     for face in faces
       # Offset face. Only the outer loop is used - any inner holes are ignored
       # for now. The offset loop is reversed from the source in order to reverse
@@ -367,7 +378,7 @@ module TT::Plugins::Shell
       # (!) Error catch
       #     Error: #<ArgumentError: Points are not planar>
       begin
-        offset_face = shell_entities.add_face( points )
+        offset_face = builder.add_face( points )
       rescue ArgumentError => e
         # (!) Recreate with triangulated PolygonMesh.
 
@@ -391,10 +402,9 @@ module TT::Plugins::Shell
           offsets[ vertex ]
         }.reverse! # Reversed in order to generate a proper loop for the face.
         points = edge_points + offset_points
-        self.add_border_face( shell_entities, points )
+        self.add_border_face( builder, points )
       end
     end
-    shell
   end
 
 
@@ -407,6 +417,11 @@ module TT::Plugins::Shell
     edges = []
     if TT::Geom3d.planar_points?( points )
       face = entities.add_face( points )
+      if face.nil?
+        puts 'failed to create face'
+        p points
+        return
+      end
       edges = face.edges
     else
       tri1 = [ points[0], points[1], points[2] ]
@@ -531,7 +546,7 @@ module TT::Plugins::Shell
   # @note Debug method to reload the plugin.
   #
   # @example
-  #   TT::Plugins::Template.reload
+  #   TT::Plugins::Shell.reload
   #
   # @param [Boolean] tt_lib Reloads TT_Lib2 if +true+.
   #
