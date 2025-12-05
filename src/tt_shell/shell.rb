@@ -78,6 +78,7 @@ module TT::Plugins::Shell
           offsets[ vertex ]
         }.reverse! # Reversed in order to generate a proper loop for the face.
         points = edge_points + offset_points
+        points.reverse! # REVIEW: Seems to be needed to ensure proper normal direction.
         self.add_border_face( builder, points )
       end
     end
