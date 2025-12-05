@@ -8,13 +8,9 @@
 require 'sketchup.rb'
 require 'extensions.rb'
 
-#-------------------------------------------------------------------------------
-
 module TT
  module Plugins
   module Shell
-
-  ### CONSTANTS ### ------------------------------------------------------------
 
   # Plugin information
   PLUGIN_ID       = 'TT_Shell'.freeze
@@ -26,9 +22,6 @@ module TT
   PATH_ROOT     = File.dirname( __FILE__ ).freeze
   PATH          = File.join( PATH_ROOT, FILENAMESPACE ).freeze
 
-
-  ### EXTENSION ### ------------------------------------------------------------
-
   unless file_loaded?( __FILE__ )
     loader = File.join( PATH, 'core.rb' )
     ex = SketchupExtension.new( PLUGIN_NAME, loader )
@@ -37,14 +30,9 @@ module TT
     ex.copyright   = 'Thomas Thomassen © 2011–2013'
     ex.creator     = 'Thomas Thomassen (thomas@thomthom.net)'
     Sketchup.register_extension( ex, true )
+    file_loaded( __FILE__ )
   end
 
   end # module Shell
  end # module Plugins
 end # module TT
-
-#-------------------------------------------------------------------------------
-
-file_loaded( __FILE__ )
-
-#-------------------------------------------------------------------------------

@@ -6,103 +6,45 @@
 #-------------------------------------------------------------------------------
 
 require 'sketchup.rb'
-begin
-  require 'TT_Lib2/core.rb'
-rescue LoadError => e
-  module TT
-    if @lib2_update.nil?
-      url = 'http://www.thomthom.net/software/sketchup/tt_lib2/errors/not-installed'
-      options = {
-        :dialog_title => 'TT_Lib² Not Installed',
-        :scrollable => false, :resizable => false, :left => 200, :top => 200
-      }
-      w = UI::WebDialog.new( options )
-      w.set_size( 500, 300 )
-      w.set_url( "#{url}?plugin=#{File.basename( __FILE__ )}" )
-      w.show
-      @lib2_update = w
-    end
-  end
-end
 
+require 'tt_shell/geom3d.rb'
+require 'tt_shell/settings.rb'
 
-#-------------------------------------------------------------------------------
-
-if defined?( TT::Lib ) && TT::Lib.compatible?( '2.7.0', 'Shell' )
 
 module TT::Plugins::Shell
 
-
-  ### MODULE VARIABLES ### -----------------------------------------------------
-
-  # Preference
-  @settings = TT::Settings.new( PLUGIN_ID )
+  @settings = Settings.new( PLUGIN_ID )
   @settings.set_default( :thickness, 500.mm )
 
   def self.settings; @settings; end
 
 
-  ### MENU & TOOLBARS ### ------------------------------------------------------
-
   unless file_loaded?( __FILE__ )
-    # Menus
-    m = TT.menu( 'Tools' )
+    m = UI.menu( 'Tools' )
     m.add_item( 'Shell' ) { self.activate_shell_tool }
+    file_loaded( __FILE__ )
   end
 
 
-  ### MAIN SCRIPT ### ----------------------------------------------------------
-
-  # @deprecated Version 0.1 method.
-  # @since 0.1.0
-  def self.shell_selection
-    # Prompt user for input.
-    prompts = [ 'Thickness: ' ]
-    defaults = [ @settings[:thickness] ]
-    results = UI.inputbox( prompts, defaults, 'Shell' )
-    return unless results
-    # Process input.
-    thickness = results[0]
-    return if thickness == 0
-    @settings[:thickness] = thickness
-    # Shell the current selection.
-    time_start = Time.now
-    model = Sketchup.active_model
-    TT::Model.start_operation( 'Shell' )
-    for entity in model.selection
-      next unless TT::Instance.is?( entity )
-      definition = TT::Instance.definition( entity )
-      self.shell( definition.entities, thickness )
-    end
-    model.commit_operation
-    puts "Shell took #{Time.now-time_start}s"
-  end
-
-
-  # @since 0.2.0
   def self.activate_shell_tool
     Sketchup.active_model.select_tool( ShellTool.new )
   end
 
 
-  # @since 0.2.0
   class ShellTool
 
-    # @since 0.2.0
     PARENT = TT::Plugins::Shell # Shorthand alias
 
-    # @since 0.2.0
     COLOR_FILL = Sketchup::Color.new( 255, 255, 255, 200 )
     COLOR_EDGE = Sketchup::Color.new(   0,   0,   0, 200 )
 
-    # @since 0.2.0
     def initialize
       # Gather faces and vertices.
       @meshes = []
       model = Sketchup.active_model
       for instance in model.selection
-        next unless TT::Instance.is?( instance )
-        definition = TT::Instance.definition( instance )
+        next unless instance.is_a?( Sketchup::ComponentInstance ) || instance.is_a?( Sketchup::Group )
+        definition = instance.definition
         faces = []
         vertices = []
         for entity in definition.entities
@@ -125,30 +67,25 @@ module TT::Plugins::Shell
       @ip_start = Sketchup::InputPoint.new
     end
 
-    # @since 0.2.0
     def enableVCB?
       return true
     end
 
-    # @since 0.2.0
     def activate
       cache_preview()
       Sketchup.active_model.active_view.invalidate
       update_ui()
     end
 
-    # @since 0.2.0
     def deactivate( view )
       view.invalidate
     end
 
-    # @since 0.2.0
     def resume( view )
       view.invalidate
       update_ui()
     end
 
-    # @since 0.2.0
     def onUserText( text, view )
       thickness = text.to_l
       @thickness = thickness
@@ -163,13 +100,11 @@ module TT::Plugins::Shell
 
     # Pressing enter when the thickness has not changed will commit the offset.
     #
-    # @since 0.2.0
     def onReturn(view)
       offset_mesh()
       view.model.select_tool( nil )
     end
 
-    # @since 0.2.0
     def onCancel( reason, view )
       @ip_start.clear
       @thickness = @cached_thickness
@@ -178,13 +113,11 @@ module TT::Plugins::Shell
       view.invalidate
     end
 
-    # @since 0.2.0
     def onLButtonDoubleClick( flags, x, y, view )
       offset_mesh()
       view.model.select_tool( nil )
     end
 
-    # @since 0.2.0
     def onLButtonDown( flags, x, y, view )
       if @ip_start.valid?
         # Second point picked.
@@ -198,7 +131,6 @@ module TT::Plugins::Shell
       view.invalidate
     end
 
-    # @since 0.2.0
     def onMouseMove( flags, x, y, view )
       @ip_mouse.pick( view, x, y )
       view.tooltip = @ip_mouse.tooltip
@@ -209,7 +141,6 @@ module TT::Plugins::Shell
       view.invalidate
     end
 
-    # @since 0.2.0
     def draw( view )
       # Geometry Preview
       unless @thickness == 0.to_l || @polygons.empty?
@@ -238,14 +169,12 @@ module TT::Plugins::Shell
     private
 
     # @return [Nil]
-    # @since 0.2.0
     def reset
       @ip_start.clear
       nil
     end
 
     # @return [Nil]
-    # @since 0.2.0
     def update_ui
       Sketchup.status_text = 'Enter a thickness and double click to complete.'
       Sketchup.vcb_label = 'Thickness'
@@ -254,7 +183,6 @@ module TT::Plugins::Shell
     end
 
     # @return [Nil]
-    # @since 0.2.0
     def update_input
       @thickness = @ip_start.position.distance( @ip_mouse.position )
       update_ui()
@@ -263,7 +191,6 @@ module TT::Plugins::Shell
     end
 
     # @return [Boolean]
-    # @since 0.2.0
     def cache_preview
       return false if @thickness == 0.to_l
       @polygons = offset_polygons()
@@ -277,7 +204,6 @@ module TT::Plugins::Shell
     # @param [Geom::Transformation] transformation
     #
     # @return [Hash]
-    # @since 0.2.0
     def offset_vertices( thickness, vertices, transformation )
       offsets = {}
       for vertex in vertices
@@ -290,7 +216,6 @@ module TT::Plugins::Shell
     # Generates an array of offset polygons.
     #
     # @return [Array<Array<Geom::Point3d>>]
-    # @since 0.2.0
     def offset_polygons
       thickness = @thickness
       polygons = []
@@ -305,12 +230,11 @@ module TT::Plugins::Shell
     end
 
     # @return [Boolean]
-    # @since 0.2.0
     def offset_mesh
       return false if @thickness == 0.to_l
       model = Sketchup.active_model
       time_start = Time.now
-      TT::Model.start_operation( "Shell #{@thickness}" )
+      model.start_operation( "Shell #{@thickness}", true )
       for mesh in @meshes
         entities, faces, vertices, transformation = mesh
         PARENT.shell( entities, @thickness )
@@ -333,7 +257,6 @@ module TT::Plugins::Shell
   # @param [Sketchup::Entities] entities
   #
   # @return [Sketchup::Group]
-  # @since 0.1.0
   def self.shell( entities, thickness, use_builder: true )
     # Gather faces and vertices.
     faces = []
@@ -412,10 +335,9 @@ module TT::Plugins::Shell
   # @param [Array<Geom::Point3d>] points
   #
   # @return [Nil]
-  # @since 0.1.0
   def self.add_border_face( entities, points )
     edges = []
-    if TT::Geom3d.planar_points?( points )
+    if Geom3d.planar_points?( points )
       face = entities.add_face( points )
       if face.nil?
         puts 'failed to create face'
@@ -443,7 +365,6 @@ module TT::Plugins::Shell
   # @param [Length] distance
   #
   # @return [Geom::Point3d,Nil] Nil upon failure.
-  # @since 0.1.0
   def self.offset_vertex( vertex, distance )
     faces = vertex.faces
     # Can't offset vertex without any connected face.
@@ -505,7 +426,6 @@ module TT::Plugins::Shell
   # @param [Sketchup::Face] face2
   #
   # @return [Sketchup::Edge] Edge dividing the faces.
-  # @since 0.1.0
   def self.smooth_border_segment( face1, face2 )
     divider = ( face1.edges & face2.edges)[0]
     divider.soft = true
@@ -518,7 +438,6 @@ module TT::Plugins::Shell
   # @param [Sketchup::Face] destination
   #
   # @return [Nil]
-  # @since 0.1.0
   def self.copy_soft_smooth( source, destination )
     loop1 = source.outer_loop.vertices
     loop2 = destination.outer_loop.vertices.reverse!
@@ -541,21 +460,15 @@ module TT::Plugins::Shell
   end
 
 
-  ### DEBUG ### ----------------------------------------------------------------
-
-  # @note Debug method to reload the plugin.
+  # @note Debug method to reload the extension.
   #
   # @example
   #   TT::Plugins::Shell.reload
   #
-  # @param [Boolean] tt_lib Reloads TT_Lib2 if +true+.
-  #
   # @return [Integer] Number of files reloaded.
-  # @since 1.0.0
-  def self.reload( tt_lib = false )
+  def self.reload
     original_verbose = $VERBOSE
     $VERBOSE = nil
-    TT::Lib.reload if tt_lib
     # Core file (this)
     load __FILE__
     # Supporting files
@@ -572,11 +485,3 @@ module TT::Plugins::Shell
   end
 
 end # module
-
-end # if TT_Lib
-
-#-------------------------------------------------------------------------------
-
-file_loaded( __FILE__ )
-
-#-------------------------------------------------------------------------------
