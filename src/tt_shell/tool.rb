@@ -206,10 +206,16 @@ module TT::Plugins::Shell
       return false if @thickness == 0.to_l
       model = Sketchup.active_model
       time_start = Time.now
-      model.start_operation( "Shell #{@thickness}", true )
+      model.start_operation("Shell #{@thickness}", true)
       for mesh in @meshes
         entities, faces, vertices, transformation = mesh
-        PARENT.shell( entities, @thickness )
+        if Sketchup.respond_to?(:register_procedure)
+          parent = entities.parent
+          instance = parent.entities.add_procedural_component(ShellProcedure::ID, entities)
+          # TODO: Pass in distance.
+        else
+          PARENT.shell(entities, @thickness)
+        end
       end
       model.commit_operation
       puts "Shell took #{Time.now-time_start}s"
