@@ -1,3 +1,6 @@
+require 'tt_shell/shell.rb'
+
+
 module TT::Plugins::Shell
 
   class ShellTool
