@@ -1,3 +1,4 @@
+require 'tt_shell/procedure.rb'
 require 'tt_shell/shell.rb'
 
 
@@ -10,24 +11,34 @@ module TT::Plugins::Shell
     COLOR_FILL = Sketchup::Color.new( 255, 255, 255, 200 )
     COLOR_EDGE = Sketchup::Color.new(   0,   0,   0, 200 )
 
+    # @!attribute [rw] instance
+    #   @return [Sketchup::ComponentInstance, Sketchup::Group]
+    # @!attribute [rw] faces
+    #   @return [Array<Sketchup::Face>]
+    # @!attribute [rw] vertices
+    #   @return [Array<Sketchup::Vertex>]
+    # @!attribute [rw] transformation
+    #   @return [Geom::Transformation]
+    Mesh = Struct.new(:instance, :faces, :vertices, :transformation)
+
     def initialize
       # Gather faces and vertices.
+      # @type [Array<Mesh>]
       @meshes = []
       model = Sketchup.active_model
-      for instance in model.selection
+      model.selection.each { |instance|
         next unless instance.is_a?( Sketchup::ComponentInstance ) || instance.is_a?( Sketchup::Group )
         definition = instance.definition
         faces = []
         vertices = []
-        for entity in definition.entities
-          next unless entity.is_a?( Sketchup::Face )
-          faces << entity
-          vertices << entity.outer_loop.vertices
-        end
+        definition.entities.grep(Sketchup::Face).each { |face|
+          faces << face
+          vertices << face.outer_loop.vertices
+        }
         vertices.flatten!
         vertices.uniq!
-        @meshes << [ definition.entities, faces, vertices, instance.transformation ]
-      end
+        @meshes << Mesh.new(instance, faces, vertices, instance.transformation)
+      }
       # Cached data used by draw()
       @offsets = {} # Key: Vertex - Value: Point3d
       @polygons = []
@@ -191,13 +202,12 @@ module TT::Plugins::Shell
     def offset_polygons
       thickness = @thickness
       polygons = []
-      for mesh in @meshes
-        entities, faces, vertices, transformation = mesh
-        cached_vertices = offset_vertices( thickness, vertices, transformation )
-        for face in faces
+      @meshes.each { |mesh|
+        cached_vertices = offset_vertices( thickness, mesh.vertices, mesh.transformation )
+        mesh.faces.each { |face|
           polygons << face.vertices.map { |vertex| cached_vertices[vertex] }
-        end
-      end
+        }
+      }
       polygons
     end
 
@@ -207,16 +217,24 @@ module TT::Plugins::Shell
       model = Sketchup.active_model
       time_start = Time.now
       model.start_operation("Shell #{@thickness}", true)
-      for mesh in @meshes
-        entities, faces, vertices, transformation = mesh
+      @meshes.each { |mesh|
         if Sketchup.respond_to?(:register_procedure)
-          parent = entities.parent
-          instance = parent.entities.add_procedural_component(ShellProcedure::ID, entities)
+          instance = mesh.instance
+          if instance.is_a?(Sketchup::Group)
+            instance = instance.to_component
+          end
+          definition = instance.definition
+
+          definition.attach_procedure(ShellProcedure.instance,
+              {
+                thickness: @thickness.to_f
+              })
+          # instance = parent.entities.add_procedural_component(ShellProcedure::ID, mesh.entities)
           # TODO: Pass in distance.
         else
-          PARENT.shell(entities, @thickness)
+          PARENT.shell(mesh.entities, @thickness)
         end
-      end
+      }
       model.commit_operation
       puts "Shell took #{Time.now-time_start}s"
       true
