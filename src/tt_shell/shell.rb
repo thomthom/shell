@@ -8,28 +8,29 @@ module TT::Plugins::Shell
   #   if it will be slower than adding the entities directly.)
   #
   # @param [Sketchup::Entities] entities
+  # @param [Length] thickness
+  # @param [Boolean] use_builder Whether to use +Entities#build+ if available.
   #
   # @return [Sketchup::Group]
   def self.shell( entities, thickness, use_builder: true )
     # Gather faces and vertices.
     faces = []
     vertices = []
-    for entity in entities
-      next unless entity.is_a?( Sketchup::Face )
-      faces << entity
-      vertices << entity.outer_loop.vertices
-    end
+    entities.grep(Sketchup::Face).each { |faces|
+      faces << face
+      vertices << face.outer_loop.vertices
+    }
     vertices.flatten!
     vertices.uniq!
     # Offset vertices - generate a hash that links the source vertices with the
     # offset vertices.
     offsets = {}
     offsets_pt = {}
-    for vertex in vertices
+    vertices.each { |vertex|
       point = self.offset_vertex( vertex, thickness )
       offsets[ vertex ] = point
       offsets_pt[ vertex.position.to_a ] = point
-    end
+    }
     # Build the shell geometry.
     shell = entities.add_group
     shell_entities = shell.entities
@@ -43,8 +44,13 @@ module TT::Plugins::Shell
     shell
   end
 
+  # @param [Sketchup::Entities, Sketchup::EntitiesBuilder] builder
+  # @param [Sketchup::Entities] shell_entities
+  # @param [Array<Sketchup::Face>] faces
+  # @param [Hash{Sketchup::Vertex => Geom::Point3d}] offsets
+  # @param [Hash{Array<Float> => Geom::Point3d}] offsets_pt
   def self.offset_faces(builder, shell_entities, faces, offsets, offsets_pt)
-    for face in faces
+    faces.each { |face|
       # Offset face. Only the outer loop is used - any inner holes are ignored
       # for now. The offset loop is reversed from the source in order to reverse
       # the normal of the offset face.
@@ -57,12 +63,13 @@ module TT::Plugins::Shell
         offset_face = builder.add_face( points )
       rescue ArgumentError => e
         # (!) Recreate with triangulated PolygonMesh.
+        # TODO: Use Geom.tesselate with the builder path. Or build directly with the builder.
 
         mesh = face.mesh
-        for i in ( 1..mesh.count_points )
+        (1..mesh.count_points).each { |i|
           pt = offsets_pt[ mesh.point_at(i).to_a ]
           mesh.set_point( i, pt )
-        end
+        }
         shell_entities.add_faces_from_mesh( mesh, 0, face.material, face.back_material )
 
         puts e.message
@@ -71,21 +78,21 @@ module TT::Plugins::Shell
       # Transfer edge properties from the source face to the destination face.
       self.copy_soft_smooth( face, offset_face ) # + 0.03s
       # Add border faces. A border edge only has one edge connected.
-      for edge in face.edges
+      face.edges.each { |edge|
         next unless edge.faces.size == 1
-        edge_points = edge.vertices { |vertex| vertex.position }
+        edge_points = edge.vertices.map { |vertex| vertex.position }
         offset_points = edge.vertices.map { |vertex|
           offsets[ vertex ]
         }.reverse! # Reversed in order to generate a proper loop for the face.
         points = edge_points + offset_points
         points.reverse! # REVIEW: Seems to be needed to ensure proper normal direction.
         self.add_border_face( builder, points )
-      end
-    end
+      }
+    }
   end
 
 
-  # @param [Sketchup::Entities] entities
+  # @param [Sketchup::Entities, Sketchup::EntitiesBuilder] entities
   # @param [Array<Geom::Point3d>] points
   #
   # @return [Nil]
@@ -107,10 +114,10 @@ module TT::Plugins::Shell
       divider = self.smooth_border_segment( face1, face2 )
       edges = ( face1.edges + face2.edges ) - [ divider ]
     end
-    for edge in edges
+    edges.each { |edge|
       edge.soft = false
       edge.smooth = false
-    end
+    }
     nil
   end
 
@@ -118,7 +125,7 @@ module TT::Plugins::Shell
   # @param [Sketchup::Vertex] vertex
   # @param [Length] distance
   #
-  # @return [Geom::Point3d,Nil] Nil upon failure.
+  # @return [Geom::Point3d, nil] +nil+ upon failure (no connected faces).
   def self.offset_vertex( vertex, distance )
     faces = vertex.faces
     # Can't offset vertex without any connected face.
@@ -195,7 +202,7 @@ module TT::Plugins::Shell
   def self.copy_soft_smooth( source, destination )
     loop1 = source.outer_loop.vertices
     loop2 = destination.outer_loop.vertices.reverse!
-    for index in 0...loop1.size
+    (0...loop1.size).each { |index|
       end_index = ( index + 1 ) % loop1.size
       # Source
       v1 = loop1[ index ]
@@ -209,7 +216,7 @@ module TT::Plugins::Shell
       destination_edge.soft   = source_edge.soft?
       destination_edge.smooth = source_edge.smooth?
       destination_edge.hidden = source_edge.hidden?
-    end
+    }
     nil
   end
 
