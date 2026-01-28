@@ -216,29 +216,41 @@ module TT::Plugins::Shell
       return false if @thickness == 0.to_l
       model = Sketchup.active_model
       time_start = Time.now
+
+      # `to_component` will remove the group from the selection. Build a new collection
+      # of instance to replace the selection after the operation.
+      selection = []
+
       model.start_operation("Shell #{@thickness}", true)
       @meshes.each { |mesh|
         if Sketchup.respond_to?(:register_procedure)
+
           instance = mesh.instance
           if instance.is_a?(Sketchup::Group)
             instance = instance.to_component
           end
           definition = instance.definition
+          selection << instance
 
-          definition.attach_procedure(ShellProcedure.instance,
-              {
-                thickness: @thickness.to_f
-              })
-          # instance = parent.entities.add_procedural_component(ShellProcedure::ID, mesh.entities)
-          # TODO: Pass in distance.
+          parameters = {
+            thickness: @thickness.to_f
+          }
+          definition.attach_procedure(ShellProcedure.instance, parameters)
+
         else
-          PARENT.shell(mesh.entities, @thickness)
+          PARENT.shell(mesh.entities, mesh.entities, @thickness)
         end
       }
       model.commit_operation
+
       puts "Shell took #{Time.now-time_start}s"
+
+      model.selection.clear
+      model.selection.add(selection)
+
       true
-    rescue
+    rescue error
+      puts "Shell operation failed: #{error.message}"
       model.abort_operation
       raise
     end

@@ -49,12 +49,16 @@ class ShellProcedure < Sketchup::Procedure
 
     return if faces.empty? || thickness == 0
 
+    puts
     p [:control_entities, definition.control_entities, definition.control_entities.size]
     p [:entities, definition.entities, definition.entities.size]
     # TODO: Generate the offset geometry directly into the definition.
 
     puts "Running ShellProcedure with thickness #{thickness}"
-    TT::Plugins::Shell.shell(definition.entities, @thickness)
+    source = definition.control_entities
+    target = definition.entities
+    TT::Plugins::Shell.shell(source, target, thickness, procedure: true)
+    # definition.entities.add_face([0,0,0], [100.mm,0,0], [100.mm,100.mm,0], [0,100.mm,0])
 
     p [:control_entities, definition.control_entities, definition.control_entities.size]
     p [:entities, definition.entities, definition.entities.size]

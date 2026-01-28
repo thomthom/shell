@@ -7,21 +7,24 @@ module TT::Plugins::Shell
   #   group. Maybe just call explode afterwards? (Explode might be slow. Check
   #   if it will be slower than adding the entities directly.)
   #
-  # @param [Sketchup::Entities] entities
+  # @param [Sketchup::Entities] source
+  # @param [Sketchup::Entities] target
   # @param [Length] thickness
   # @param [Boolean] use_builder Whether to use +Entities#build+ if available.
+  # @param [Boolean] procedure Whether this is being called from a procedure.
   #
   # @return [Sketchup::Group]
-  def self.shell( entities, thickness, use_builder: true )
+  def self.shell(source, target, thickness, use_builder: true, procedure: false)
     # Gather faces and vertices.
     faces = []
     vertices = []
-    entities.grep(Sketchup::Face).each { |faces|
+    source.grep(Sketchup::Face).each { |face|
       faces << face
       vertices << face.outer_loop.vertices
     }
     vertices.flatten!
     vertices.uniq!
+    puts "Shelling #{faces.size} faces with #{vertices.size} unique vertices."
     # Offset vertices - generate a hash that links the source vertices with the
     # offset vertices.
     offsets = {}
@@ -31,17 +34,26 @@ module TT::Plugins::Shell
       offsets[ vertex ] = point
       offsets_pt[ vertex.position.to_a ] = point
     }
+    puts "Offset #{offsets.size} vertices."
     # Build the shell geometry.
-    shell = entities.add_group
-    shell_entities = shell.entities
+    if !procedure
+      puts "Using group for shell"
+      shell = target.add_group
+      shell_entities = shell.entities
+    else
+      shell_entities = target
+    end
     if use_builder && shell_entities.respond_to?(:build)
+      puts "Using Entities#build"
       shell_entities.build { |builder|
         self.offset_faces(builder, shell_entities, faces, offsets, offsets_pt)
       }
     else
+      puts "Using PolygonMesh"
       self.offset_faces(shell_entities, shell_entities, faces, offsets, offsets_pt)
     end
-    shell
+    # shell
+    nil
   end
 
   # @param [Sketchup::Entities, Sketchup::EntitiesBuilder] builder
