@@ -41,11 +41,18 @@ module TT::Plugins::Shell
       shell = target.add_group
       shell_entities = shell.entities
     else
+      target.clear!
       shell_entities = target
     end
     if use_builder && shell_entities.respond_to?(:build)
       puts "Using Entities#build"
       shell_entities.build { |builder|
+        if procedure
+          faces.each { |face|
+            builder.add_face(face.vertices.map { |vertex| vertex.position })
+            # TODO: Copy properties.
+          }
+        end
         self.offset_faces(builder, shell_entities, faces, offsets, offsets_pt)
       }
     else
