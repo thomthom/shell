@@ -13,8 +13,21 @@ module TT::Plugins::Shell
 
 
   unless file_loaded?( __FILE__ )
+    cmd_shell_tool = UI::Command.new('Shell') {
+      self.activate_shell_tool
+    }
+
     menu = UI.menu('Tools')
-    menu.add_item('Shell') { self.activate_shell_tool }
+    menu.add_item(cmd_shell_tool)
+
+    toolbar = UI::Toolbar.new('Shell')
+    toolbar.add_item(cmd_shell_tool)
+    if toolbar.get_last_state == TB_NEVER_SHOWN
+      toolbar.show
+    else
+      toolbar.restore
+    end
+
     file_loaded(__FILE__)
   end
 
